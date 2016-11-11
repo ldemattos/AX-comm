@@ -1,0 +1,277 @@
+#!/usr/bin/expect -f
+#############################
+# AX-ComM v0.1              #
+#############################
+# Leonardo M. N. de Mattos  #	
+# l@mattos.eng.br           #
+# http://www.mattos.eng.br  #
+#############################
+
+#versao
+set ver v0.1
+
+#desligar o timeout
+set timeout -1
+
+#Banner
+send_user "###############################\n"
+send_user "# AX-ComM $ver - Olá Admin =) #\n"
+send_user "###############################\n"
+
+#Menu
+set opcao 0
+while {$opcao != 1 & $opcao != 2 & $opcao != 3 & $opcao != 4} {
+
+	send_user "\nO que você deseja fazer?\n"
+	send_user "\[1\] - Alterar todas as senhas de administrador\n"
+	send_user "\[2\] - Executar um determinado comando nas máquinas\n"
+	send_user "\[3\] - REINICIAR todas as máquinas\n"
+	send_user "\[4\] - DESLIGAR todas as máquinas\n"
+	send_user "\n"
+	send_user "Por favor, entre com uma das opcoes acima: "
+	expect_user -re "(.*)\n"
+
+	set opcao $expect_out(1,string)
+}
+	
+
+####declarando variávies básicas
+#################################
+
+#requisicao da range de ips
+send_user "\nQual a faixa de ips? (ex.: 192.168.1.): "
+expect_user -re "(.*)\n"
+set ipr $expect_out(1,string)
+
+#primeiro ip da range
+send_user "\nQual o primeiro ip da faixa? (ex.: 1): "
+expect_user -re "(.*)\n"
+set ipi $expect_out(1,string)
+
+#ultimo ip da range 
+send_user "\nQual o último ip da faixa? (ex.: 254): "
+expect_user -re "(.*)\n"
+set ipf $expect_out(1,string)
+
+
+######################
+####requisicao da senha
+#desligar o echo
+stty -echo
+
+#texto
+send_user "\nPor favor entre com a senha de root das máquinas: "
+
+##requerindo a senha para o usuario
+expect_user -re "(.*)\n"
+
+#determina a variavel senha
+set senha $expect_out(1,string)
+
+#religar echo
+stty echo
+
+###########funcoes
+
+proc valorfor {arg1} {
+set finalfor [expr $arg1 - 5]
+for {set inicialfor 1} { $inicialfor <= $finalfor} {incr inicialfor} {send_user "\#"} 
+}
+
+proc banner_i {arg1 arg2} {
+	#estou na maquina x
+	send_user "\n"
+	valorfor $arg2
+	send_user "################################\n"
+	send_user "# Iniciando na maquina $arg1 ! #\n"
+	valorfor $arg2
+	send_user "################################\n"
+}
+
+proc banner_s {arg1 arg2} {
+	#saindo da maquina x
+	send_user "\n"
+	valorfor $arg2
+	send_user "#############################\n"
+	send_user "# Máquina $arg1 terminada ! #\n"
+	valorfor $arg2
+	send_user "#############################\n"
+}
+
+proc noroute {arg1 arg2} {
+	#maquina desligada
+	valorfor $arg2
+	send_user "##################################################\n"
+	send_user "# A máquina $arg1 está desligada ou fora da rede #\n"
+	valorfor $arg2
+	send_user "##################################################\n"
+}
+
+proc refused {arg1 arg2} {	
+	#ssh nao ativo
+	valorfor $arg2
+	send_user "#############################################\n"
+	send_user "# A máquina $arg1 está com o SSHD desligado #\n"
+	valorfor $arg2
+	send_user "#############################################\n\n"
+	exp_continue
+}
+
+proc sshid {} {
+	#nova maquina nao conhecida
+	sleep 2
+	send "yes\r"
+	sleep 2
+	exp_continue
+}
+	
+proc login {arg1} {	
+			sleep 2			
+			send "$arg1\r"		
+			sleep 2
+			exp_continue
+}
+
+######### caso a opcao seje 1
+if {$opcao == 1} then {
+		set senha_nova1 0
+		set senha_nova2 1
+			while { $senha_nova1 != $senha_nova2 } {
+				#desligar o echo
+				stty -echo
+				send_user "\n"
+				send_user "\nPor favor entre com a NOVA senha de root: "
+				expect_user -re "(.*)\n"
+				set senha_nova1 $expect_out(1,string)
+				send_user "\n"
+				send_user "\nPor favor CONFIRME a NOVA senha de root: "
+				expect_user -re "(.*)\n\n"
+				set senha_nova2 $expect_out(1,string)
+				}
+			}
+
+##### Caso a opcao seje 2, qual comando a ser executado
+if {$opcao == 2} then {
+	send_user "\n\nQual o comando a ser executado em cada máquina? (ex.: uptime): "
+	expect_user -re "(.*)\n"
+	set cmd $expect_out(1,string)
+			}
+
+
+###########
+
+##########inicio do laco do principal
+while { $ipi <= $ipf } {
+	#contagem do preenchimento do banner
+	set valor [string length $ipr$ipi]
+	#banner entrada
+	banner_i $ipr$ipi $valor
+	#para opcao 1
+	if {$opcao == 1} then {
+				#conexao para a troca de senha
+				spawn ssh -p 22 -l root $ipr$ipi 
+				expect {			
+					"*Connection refused*"	{
+							refused $ipr$ipi $valor
+							}
+					"*No route to host*" {
+							noroute $ipr$ipi $valor
+							}
+					"*continue connecting*" {
+							sshid
+							}
+					"*Password:*" {
+							login $senha
+							}											
+					"*s password:*" {
+							login $senha
+						}
+					"*~#*"	{
+							sleep 2
+							send "passwd\r"
+							exp_continue
+						}				
+					"*Enter new UNIX*" {							
+							sleep 2
+							send "$senha_nova1\r"
+							exp_continue
+							}
+					"*Retype new*"	{
+							sleep 2
+							send "$senha_nova1\r"
+							send "logout\r"
+							exp_continue
+							}						
+					}
+			}
+	#para opcao 2
+	if {$opcao == 2} then {
+				#conexao executando o comando desejado
+				spawn ssh -p 22 -l root $ipr$ipi $cmd
+				expect {
+					"*Connection refused*"	{
+							refused $ipr$ipi $valor
+							}
+					"*No route to host*" {
+							noroute $ipr$ipi $valor
+							}
+					"*continue connecting*" {
+							sshid
+							}
+					"*Password:*" {
+							login $senha							
+							}
+					"*s password:*" {
+							login $senha
+						}
+					}
+				}
+	if {$opcao == 3} then {
+				#comando para reiniciar as maquinas
+				spawn ssh -p 22 -l root $ipr$ipi reboot
+				expect {
+					"*Connection refused*"	{
+							refused $ipr$ipi $valor
+							}
+					"*No route to host*" {
+							noroute $ipr$ipi $valor
+							}
+					"*continue connecting*" {
+							sshid
+							}
+					"*Password:*" {
+							login $senha
+							}
+					"*s password:*" {
+							login $senha
+						}
+					}
+	
+				}
+	if {$opcao == 4} then {
+				#comando para desligar as maquinas
+				spawn ssh -p 22 -l root $ipr$ipi halt
+				expect {
+					"*Connection refused*"	{
+							refused $ipr$ipi $valor
+							}
+					"*No route to host*" {
+							noroute $ipr$ipi $valor
+							}
+					"*continue connecting*" {
+							sshid
+							}
+					"*Password:*" {
+							login $senha
+							}
+					"*s password:*" {
+							login $senha
+						}
+					}
+				}
+	#banner terminada
+	banner_s $ipr$ipi $valor
+	#incremento da variavel ipi				
+	incr ipi
+}
+#########fim do laco
